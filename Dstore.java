@@ -12,8 +12,8 @@ public class Dstore {
     static int cport;
     static int timeout;
     static String filePath;
-    static Controller controller;
     static ServerSocket ssDstore;
+    static Socket controller;
     static ArrayList<String> filesInDstore = new ArrayList<String>();
 
 
@@ -63,13 +63,7 @@ public class Dstore {
         Dstore.filePath = filePath;
     }
 
-    public static Controller getController() {
-        return controller;
-    }
 
-    public void setController(Controller controller) {
-        this.controller = controller;
-    }
 
     public static ServerSocket getssDstore() {
         return ssDstore;
@@ -98,6 +92,11 @@ public class Dstore {
 
     public static  void connectController() {
         send("JOIN" + " " + getPort(), getCport());
+        try {
+            controller = new Socket("localhost",getCport());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     public static ArrayList<String> getFilesInDstore() {
@@ -123,13 +122,44 @@ public class Dstore {
                         System.out.println(splittedMessage[1]);
                         getFilesInDstore().add(splittedMessage[1]);
                         send(client, "ACK");
+
                         listenFile(client,splittedMessage[1]);
-                        send("STORE_ACK " + splittedMessage[1], getCport());
+
+                        send(controller,"STORE_ACK" + " " + splittedMessage[1]);
+
                     }
+
+                    if (infoMessage.equals("LOAD_DATA")) {
+                        System.out.println("LOAD "+splittedMessage[1]);
+                        if (getFilesInDstore().contains(splittedMessage[1])){
+                            sendFile(client,new File(splittedMessage[1]));
+                            System.out.println("File SENT");
+                        } else {
+                            client.close();
+                        }
+
+                    }
+
+                    if(infoMessage.equals("REMOVE")){
+                        String filename = splittedMessage[1];
+                        File fileToDelete = new File(getFilePath() + "/" + filename);
+                        if(getFilesInDstore().contains(filename)){
+                            if(fileToDelete.delete()){
+                                send(controller, "REMOVE_ACK" + " " + splittedMessage[1]);
+                            } else {
+                                //log error
+                                System.out.println("Delete this file failed");
+                            }
+                        } else {
+                            send(controller,"ERROR_FILE_DOES_NOT_EXIST" + " " + splittedMessage[1]);
+                        }
+                    }
+
+
                 }
 
 
-                client.close();}catch(Exception e){}
+                }catch(Exception e){}
                     }
                 }).start();
             } catch (Exception e) {
@@ -141,7 +171,7 @@ public class Dstore {
     public static void listenFile(Socket socket,String filename){
         try {
 
-            byte []b= new byte[200000];
+            byte []b= new byte[(int) new File (filename).length()];
             InputStream in = socket.getInputStream();
             FileOutputStream fr= new FileOutputStream(new File(getFilePath() + "/" + filename));
             in.readNBytes(b, 0, b.length);
@@ -155,8 +185,23 @@ public class Dstore {
         }
     }
 
-    public static void sendFile(Socket client){
+    public static void sendFile(Socket client, File i){
+        try{
+            byte[] mybytearray = new byte[(int) i.length()];
+            BufferedInputStream bis = new BufferedInputStream(new FileInputStream(i));
+            bis.read(mybytearray, 0, mybytearray.length);
+            OutputStream os = client.getOutputStream();
+            os.write(mybytearray, 0, mybytearray.length);
+            os.flush();
 
+
+
+            System.out.println("TCP FIle Sent: "+"  -------sent thourgh socket" + client.getInetAddress().getAddress().toString());
+
+            //Thread.sleep(100);
+
+
+        }catch(Exception e){System.out.println("error"+e);}
     }
 
 
@@ -168,6 +213,8 @@ public class Dstore {
             out.println(message); out.flush();
             System.out.println("TCP message: "+message+"  -------sent");
 
+           // Thread.sleep(100);
+
 
         }catch(Exception e){System.out.println("error"+e);}
     }
@@ -178,7 +225,7 @@ public class Dstore {
 
             out.println(message); out.flush();
             System.out.println("TCP message: "+message+"  -------sent thourgh socket" + socket.getInetAddress().getAddress().toString());
-            Thread.sleep(1000);
+            //Thread.sleep(1000);
 
         }catch(Exception e){System.out.println("error"+e);}
     }
@@ -214,8 +261,16 @@ public class Dstore {
             }
             System.out.println("Directory created");
         } else {
+            System.out.println("Directory already exists. Clear all files from it");
+            File dir = new File(filePath);
+            if(dir.isDirectory()) {
+                for (File file : dir.listFiles())
+                    if (!file.isDirectory())
+                        file.delete();
+            }
 
-            System.out.println("Directory already exists");
+
+
         }
         System.out.println(String.valueOf(getPort()));
         connectController();
